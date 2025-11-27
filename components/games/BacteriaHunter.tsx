@@ -1065,13 +1065,19 @@ export default function BacteriaHunter({ onScoreUpdate, onComplete }: BacteriaHu
       <div className={`w-full relative bg-black ${isFullscreen ? 'h-screen' : 'h-[600px]'}`}>
         <div ref={containerRef} className="w-full h-full cursor-crosshair" />
 
-        {/* Score Display */}
-        <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm rounded-lg p-4 border border-gray-300 shadow-lg">
-          <p className="text-gray-600 text-sm">Score</p>
-          <p className="text-3xl font-bold text-cyan-600">{score}</p>
-          <p className="text-gray-500 text-xs mt-2">
-            Bacteria: {bacteriaKilled}/{totalBacteria}
-          </p>
+        {/* Health/Progress Bar */}
+        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 w-64">
+          <div className="bg-black/50 backdrop-blur-sm rounded-full p-1 border border-white/20">
+            <div className="relative h-6 bg-gray-800 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-green-500 to-cyan-400 transition-all duration-300 ease-out"
+                style={{ width: `${Math.min(100, score)}%` }}
+              />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-white text-sm font-bold drop-shadow-lg">{score} / 100</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Fullscreen Button */}

@@ -95,9 +95,11 @@ export default function BacteriaHunter({ onScoreUpdate, onComplete }: BacteriaHu
   const clockRef = useRef(new THREE.Clock())
   const keysRef = useRef<Set<string>>(new Set())
   const bacteriaRef = useRef<Bacteria[]>([])
+  const badBacteriaRef = useRef<Bacteria[]>([]) // Track bad bacteria separately
   const projectilesRef = useRef<Projectile[]>([])
   const isPointerLockedRef = useRef(false)
   const playerPositionRef = useRef(new THREE.Vector3(0, 1.6, 0))
+  const scoreRef = useRef(0) // Track score in ref for respawn check
 
   const [score, setScore] = useState(0)
   const [bacteriaKilled, setBacteriaKilled] = useState(0)
@@ -582,17 +584,135 @@ export default function BacteriaHunter({ onScoreUpdate, onComplete }: BacteriaHu
         group.scale.setScalar(type.scale)
         scene.add(group)
 
-        bacteriaRef.current.push({
+        const bacteriaObj: Bacteria = {
           mesh: group,
           type,
           health: type.health,
           velocity: new THREE.Vector3(),
           targetPosition: null,
           wanderTimer: Math.random() * 2
-        })
+        }
+
+        bacteriaRef.current.push(bacteriaObj)
+
+        // Also track bad bacteria separately
+        if (type.points > 0) {
+          badBacteriaRef.current.push(bacteriaObj)
+        }
       }
 
       return bacteriaCount
+    }
+
+    // Spawn a single bad bacteria at a random position (for respawning when none left)
+    function spawnBadBacteria() {
+      if (!sceneRef.current) return
+
+      // Pick a random bad bacteria type
+      const badTypes = ['salmonella', 'hpylori']
+      const typeKey = badTypes[Math.floor(Math.random() * badTypes.length)]
+      const type = BACTERIA_TYPES[typeKey]
+
+      const group = new THREE.Group()
+
+      if (typeKey === 'salmonella') {
+        // Salmonella (Bad) - Rod with many flagella (red)
+        const bodyGeom = new THREE.CapsuleGeometry(0.12, 0.35, 4, 8)
+        const bodyMat = new THREE.MeshStandardMaterial({
+          color: type.color,
+          roughness: 0.4,
+          emissive: type.color,
+          emissiveIntensity: 0.4
+        })
+        const body = new THREE.Mesh(bodyGeom, bodyMat)
+        body.rotation.z = Math.PI / 2
+        group.add(body)
+
+        for (let f = 0; f < 6; f++) {
+          const flagellaGeom = new THREE.CylinderGeometry(0.015, 0.008, 0.4, 4)
+          const flagellaMat = new THREE.MeshStandardMaterial({ color: 0xcc2222 })
+          const flagella = new THREE.Mesh(flagellaGeom, flagellaMat)
+          const angle = (f / 6) * Math.PI * 2
+          flagella.position.set(-0.25, Math.sin(angle) * 0.15, Math.cos(angle) * 0.15)
+          flagella.rotation.z = Math.PI / 2 + (Math.random() - 0.5) * 0.5
+          group.add(flagella)
+        }
+      } else {
+        // H. pylori (Bad) - Spiral/helical shape (orange)
+        const spiralPoints = []
+        for (let s = 0; s < 20; s++) {
+          const t = s / 19
+          spiralPoints.push(new THREE.Vector3(
+            t * 0.6 - 0.3,
+            Math.sin(t * Math.PI * 3) * 0.08,
+            Math.cos(t * Math.PI * 3) * 0.08
+          ))
+        }
+        const spiralCurve = new THREE.CatmullRomCurve3(spiralPoints)
+        const spiralGeom = new THREE.TubeGeometry(spiralCurve, 16, 0.06, 8, false)
+        const spiralMat = new THREE.MeshStandardMaterial({
+          color: type.color,
+          roughness: 0.4,
+          emissive: type.color,
+          emissiveIntensity: 0.4
+        })
+        const spiral = new THREE.Mesh(spiralGeom, spiralMat)
+        group.add(spiral)
+
+        for (let f = 0; f < 4; f++) {
+          const flagellaGeom = new THREE.CylinderGeometry(0.015, 0.008, 0.3, 4)
+          const flagellaMat = new THREE.MeshStandardMaterial({ color: 0xdd6600 })
+          const flagella = new THREE.Mesh(flagellaGeom, flagellaMat)
+          flagella.position.set(-0.35, (f - 1.5) * 0.05, 0)
+          flagella.rotation.z = Math.PI / 2 + (Math.random() - 0.5) * 0.4
+          group.add(flagella)
+        }
+      }
+
+      // Spawn at random position away from player
+      const angle = Math.random() * Math.PI * 2
+      const distance = 15 + Math.random() * 25
+      group.position.set(
+        Math.cos(angle) * distance,
+        1 + Math.random() * 2,
+        Math.sin(angle) * distance
+      )
+      group.scale.setScalar(type.scale)
+      sceneRef.current.add(group)
+
+      const bacteriaObj: Bacteria = {
+        mesh: group,
+        type,
+        health: type.health,
+        velocity: new THREE.Vector3(),
+        targetPosition: null,
+        wanderTimer: Math.random() * 2
+      }
+
+      bacteriaRef.current.push(bacteriaObj)
+      badBacteriaRef.current.push(bacteriaObj) // Add to bad bacteria list
+
+      setTotalBacteria(prev => prev + 1)
+    }
+
+    // Check if bad bacteria list is empty and spawn more if needed
+    function checkRespawnBadBacteria() {
+      // If game is complete or score is 100+, don't spawn
+      if (scoreRef.current >= 100) return
+
+      // Check if bad bacteria list is empty (all dead)
+      const aliveBadBacteria = badBacteriaRef.current.filter(b => b.health > 0)
+
+      if (aliveBadBacteria.length === 0) {
+        // Clear the dead bacteria from the list
+        badBacteriaRef.current = []
+
+        // Spawn 3-5 new bad bacteria
+        const toSpawn = 3 + Math.floor(Math.random() * 3)
+        for (let i = 0; i < toSpawn; i++) {
+          spawnBadBacteria()
+        }
+      }
     }
 
     // Update player movement
@@ -736,6 +856,7 @@ export default function BacteriaHunter({ onScoreUpdate, onComplete }: BacteriaHu
           // Update score (can be negative for good bacteria!)
           setScore(prevScore => {
             const newScore = Math.max(0, prevScore + bacteria.type.points) // Don't go below 0
+            scoreRef.current = newScore // Keep ref in sync for respawn check
             onScoreUpdate(newScore)
 
             // Check for completion at 100 points
@@ -794,6 +915,7 @@ export default function BacteriaHunter({ onScoreUpdate, onComplete }: BacteriaHu
       updateBacteria(deltaTime)
       updateProjectiles(deltaTime)
       animateRBCs(deltaTime)
+      checkRespawnBadBacteria() // Spawn more bad bacteria if none left
 
       if (rendererRef.current && sceneRef.current && cameraRef.current) {
         rendererRef.current.render(sceneRef.current, cameraRef.current)
@@ -843,6 +965,7 @@ export default function BacteriaHunter({ onScoreUpdate, onComplete }: BacteriaHu
 
       // Clear refs
       bacteriaRef.current = []
+      badBacteriaRef.current = []
       projectilesRef.current = []
     }
   }, []) // Run once on mount
